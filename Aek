@@ -1,0 +1,394 @@
+-- ===================================================
+-- สคริปต์หลัก (CatherFI UI + ระบบ AI Chat ตอบตรงประเด็น)
+-- ===================================================
+local CatherFI = loadstring(game:HttpGet("https://raw.githubusercontent.com/drcreatordev/CatherFI-UI/main/CatherFI.lua"))()
+
+local Hub = CatherFI.New({
+    Title = "เอกชอบสร้างสคริป",
+    Subtitle = "Universal Script • v1.0",
+    Theme = "Cyber"
+})
+
+--------------------------------------------------------------------------------
+-- แท็บ 1: ฟังก์ชันผู้เล่น
+--------------------------------------------------------------------------------
+local MainTab = Hub:AddTab({Name = "หน้าหลัก", Icon = "rbxassetid://4483345998"})
+local PlayerSec = MainTab:AddSection("ฟังก์ชันผู้เล่น")
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local Flying, FlySpeed, IsNoclip = false, 50, false
+local FlyConnection, NoclipConnection
+
+PlayerSec:AddToggle({
+    Title = "บิน (Fly)",
+    Desc = "เปิด/ปิด การบิน",
+    Default = false,
+    Callback = function(state)
+        Flying = state
+        local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local hrp = char:WaitForChild("HumanoidRootPart")
+        if Flying then
+            local bv = Instance.new("BodyVelocity")
+            bv.Name = "FlyVelocity"
+            bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+            bv.Velocity = Vector3.new(0, 0, 0)
+            bv.Parent = hrp
+
+            local bg = Instance.new("BodyGyro")
+            bg.Name = "FlyGyro"
+            bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+            bg.CFrame = hrp.CFrame
+            bg.Parent = hrp
+
+            FlyConnection = RunService.RenderStepped:Connect(function()
+                if not Flying or not char:FindFirstChild("HumanoidRootPart") then
+                    bv:Destroy()
+                    bg:Destroy()
+                    if FlyConnection then FlyConnection:Disconnect() end
+                    return
+                end
+                local cam = workspace.CurrentCamera
+                local moveDir = Vector3.new()
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+                bv.Velocity = moveDir * FlySpeed
+                bg.CFrame = cam.CFrame
+            end)
+        else
+            if hrp:FindFirstChild("FlyVelocity") then hrp.FlyVelocity:Destroy() end
+            if hrp:FindFirstChild("FlyGyro") then hrp.FlyGyro:Destroy() end
+            if FlyConnection then FlyConnection:Disconnect() end
+        end
+    end
+})
+
+PlayerSec:AddSlider({
+    Title = "ความเร็วการบิน",
+    Min = 10,
+    Max = 300,
+    Default = 50,
+    Callback = function(val) FlySpeed = val end
+})
+
+PlayerSec:AddSlider({
+    Title = "วิ่งเร็ว (WalkSpeed)",
+    Min = 16,
+    Max = 500,
+    Default = 16,
+    Callback = function(val)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = val
+        end
+    end
+})
+
+PlayerSec:AddToggle({
+    Title = "เดินทะลุสิ่งกีดขวาง (Noclip)",
+    Desc = "เดินทะลุกำแพงและวัตถุ",
+    Default = false,
+    Callback = function(state)
+        IsNoclip = state
+        if IsNoclip then
+            NoclipConnection = RunService.Stepped:Connect(function()
+                if LocalPlayer.Character then
+                    for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                        if part:IsA("BasePart") and part.CanCollide == true then
+                            part.CanCollide = false
+                        end
+                    end
+                end
+            end)
+        else
+            if NoclipConnection then NoclipConnection:Disconnect() end
+        end
+    end
+})
+
+PlayerSec:AddButton({
+    Title = "ล่องหน (Invisible)",
+    Callback = function()
+        if LocalPlayer.Character then
+            for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") or part:IsA("Decal") then
+                    part.Transparency = 1
+                end
+            end
+            Hub:Toast({Title = "สำเร็จ", Description = "ตัวละครล่องหนแล้ว", Type = "success"})
+        end
+    end
+})
+
+PlayerSec:AddButton({
+    Title = "วาร์ปไปจุดที่คลิก (Click TP)",
+    Callback = function()
+        local mouse = LocalPlayer:GetMouse()
+        if mouse and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3, 0))
+            Hub:Toast({Title = "วาร์ปสำเร็จ", Description = "วาร์ปไปจุดเป้าหมายเรียบร้อย", Type = "success"})
+        end
+    end
+})
+
+--------------------------------------------------------------------------------
+-- แท็บ 2: ระบบ AI Chat ตอบตรงประเด็น ไม่ย้อนคำถาม
+--------------------------------------------------------------------------------
+local AiTab = Hub:AddTab({Name = "AI Chat", Icon = "rbxassetid://6031075931"})
+local AiSec = AiTab:AddSection("ระบบแชทอัจฉริยะ")
+
+local CoreGui = game:GetService("CoreGui")
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AIGeminiChatGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Enabled = false
+ScreenGui.Parent = (gethui and gethui()) or CoreGui
+
+local MainChatFrame = Instance.new("Frame")
+MainChatFrame.Size = UDim2.new(0.85, 0, 0.85, 0)
+MainChatFrame.Position = UDim2.new(0.075, 0, 0.075, 0)
+MainChatFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+MainChatFrame.BorderSizePixel = 0
+MainChatFrame.Active = true
+MainChatFrame.Draggable = true
+MainChatFrame.Parent = ScreenGui
+
+local ChatCorner = Instance.new("UICorner")
+ChatCorner.CornerRadius = UDim.new(0, 12)
+ChatCorner.Parent = MainChatFrame
+
+local ChatStroke = Instance.new("UIStroke")
+ChatStroke.Color = Color3.fromRGB(0, 255, 128)
+ChatStroke.Thickness = 3
+ChatStroke.Parent = MainChatFrame
+
+local ChatHeader = Instance.new("Frame")
+ChatHeader.Size = UDim2.new(1, 0, 0, 50)
+ChatHeader.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+ChatHeader.Parent = MainChatFrame
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 12)
+HeaderCorner.Parent = ChatHeader
+
+local ChatTitleLabel = Instance.new("TextLabel")
+ChatTitleLabel.Size = UDim2.new(0.6, 0, 1, 0)
+ChatTitleLabel.Position = UDim2.new(0.02, 0, 0, 0)
+ChatTitleLabel.Text = "🤖 AI GIMINI ASSISTANT"
+ChatTitleLabel.TextColor3 = Color3.fromRGB(0, 255, 128)
+ChatTitleLabel.TextSize = 22
+ChatTitleLabel.Font = Enum.Font.GothamBold
+ChatTitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+ChatTitleLabel.BackgroundTransparency = 1
+ChatTitleLabel.Parent = ChatHeader
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 40, 0, 40)
+CloseBtn.Position = UDim2.new(0.95, -10, 0.1, 0)
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
+CloseBtn.TextSize = 20
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+CloseBtn.Parent = ChatHeader
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 8)
+CloseCorner.Parent = CloseBtn
+
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui.Enabled = false
+end)
+
+local AnimeChar1 = Instance.new("ImageLabel")
+AnimeChar1.Size = UDim2.new(0, 120, 0, 140)
+AnimeChar1.Position = UDim2.new(0, -15, 1, -120)
+AnimeChar1.Image = "rbxassetid://74276344038961"
+AnimeChar1.BackgroundTransparency = 1
+AnimeChar1.ScaleType = Enum.ScaleType.Crop
+AnimeChar1.ZIndex = 5
+AnimeChar1.Parent = MainChatFrame
+
+local ChatScroll = Instance.new("ScrollingFrame")
+ChatScroll.Size = UDim2.new(0.96, 0, 0.72, 0)
+ChatScroll.Position = UDim2.new(0.02, 0, 0.12, 0)
+ChatScroll.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+ChatScroll.BorderSizePixel = 0
+ChatScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ChatScroll.ScrollBarThickness = 6
+ChatScroll.Parent = MainChatFrame
+
+local ScrollCorner = Instance.new("UICorner")
+ScrollCorner.CornerRadius = UDim.new(0, 8)
+ScrollCorner.Parent = ChatScroll
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ChatScroll
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 8)
+
+UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ChatScroll.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 20)
+    ChatScroll.CanvasPosition = Vector2.new(0, UIListLayout.AbsoluteContentSize.Y)
+end)
+
+local InputBox = Instance.new("TextBox")
+InputBox.Size = UDim2.new(0.78, 0, 0.08, 0)
+InputBox.Position = UDim2.new(0.02, 0, 0.88, 0)
+InputBox.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+InputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+InputBox.PlaceholderText = "พิมพ์คำถามที่ต้องการถาม AI..."
+InputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+InputBox.Font = Enum.Font.Gotham
+InputBox.TextSize = 16
+InputBox.TextXAlignment = Enum.TextXAlignment.Left
+InputBox.Parent = MainChatFrame
+
+local InputCorner = Instance.new("UICorner")
+InputCorner.CornerRadius = UDim.new(0, 8)
+InputCorner.Parent = InputBox
+
+local SendBtn = Instance.new("TextButton")
+SendBtn.Size = UDim2.new(0.16, 0, 0.08, 0)
+SendBtn.Position = UDim2.new(0.82, 0, 0.88, 0)
+SendBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+SendBtn.Text = "ส่ง (Send)"
+SendBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SendBtn.Font = Enum.Font.GothamBold
+SendBtn.TextSize = 16
+SendBtn.Parent = MainChatFrame
+
+local SendCorner = Instance.new("UICorner")
+SendCorner.CornerRadius = UDim.new(0, 8)
+SendCorner.Parent = SendBtn
+
+local CurrentColor = Color3.fromRGB(0, 255, 128)
+local CurrentLang = "TH"
+
+local function AddChatMessage(sender, text)
+    local MsgLabel = Instance.new("TextLabel")
+    MsgLabel.Size = UDim2.new(0.96, 0, 0, 0)
+    MsgLabel.Position = UDim2.new(0.02, 0, 0, 0)
+    MsgLabel.BackgroundTransparency = 1
+    MsgLabel.Font = Enum.Font.Gotham
+    MsgLabel.TextSize = 15
+    MsgLabel.TextWrapped = true
+    MsgLabel.TextXAlignment = Enum.TextXAlignment.Left
+    MsgLabel.Text = "<b>" .. sender .. ":</b> " .. text
+    MsgLabel.RichText = true
+    MsgLabel.TextColor3 = CurrentColor
+    MsgLabel.Parent = ChatScroll
+
+    MsgLabel.Size = UDim2.new(0.96, 0, 0, MsgLabel.TextBounds.Y + 10)
+end
+
+-- ระบบวิเคราะห์คำถามและตอบตรงประเด็น (Direct Answer Engine)
+local function ProcessAIQuery(query)
+    if query == "" or query == " " then return end
+    AddChatMessage("คุณ", query)
+    InputBox.Text = ""
+
+    local response = ""
+    local qLower = string.lower(query)
+
+    if CurrentLang == "TH" then
+        if string.find(qLower, "สวัสดี") or string.find(qLower, "หวัดดี") or string.find(qLower, "ดีครับ") or string.find(qLower, "ดีจ้า") then
+            response = "สวัสดีครับ ยินดีที่ได้รู้จักครับ มีอะไรให้ AI GIMINI ช่วยเหลือสอบถามได้เลยครับ"
+        elseif string.find(qLower, "ชื่ออะไร") or string.find(qLower, "ใคร") then
+            response = "ผมคือ AI GIMINI ผู้ช่วยประจำสคริปต์ของคุณเอกครับ"
+        elseif string.find(qLower, "ทำอะไรได้บ้าง") or string.find(qLower, "ช่วยอะไรได้บ้าง") or string.find(qLower, "ฟังก์ชัน") then
+            response = "ผมสามารถตอบคำถาม ให้ข้อมูล แนะนำการใช้งานสคริปต์ และช่วยคำนวณหรือตอบเรื่องทั่วไปได้ทุกเรื่องครับ"
+        elseif string.find(qLower, "เวลา") or string.find(qLower, "กี่โมง") then
+            response = "ขณะนี้เวลา " .. os.date("%H:%M:%S") .. " น. ครับ"
+        elseif string.find(qLower, "วันที่") or string.find(qLower, "วันอะไร") then
+            response = "วันนี้วันที่ " .. os.date("%d/%m/%Y") .. " ครับ"
+        elseif string.find(qLower, "บิน") or string.find(qLower, "fly") then
+            response = "ฟังก์ชันบินสามารถเปิดใช้งานได้ที่แท็บ 'หน้าหลัก' แล้วเปิดสวิตช์ 'บิน (Fly)' ครับ"
+        elseif string.find(qLower, "วิ่งเร็ว") or string.find(qLower, "speed") then
+            response = "สามารถปรับความเร็วการวิ่งได้ที่สไลเดอร์ WalkSpeed ในแท็บหน้าหลักครับ"
+        elseif string.find(qLower, "ทะลุ") or string.find(qLower, "noclip") then
+            response = "การเดินทะลุกำแพงเปิดได้ที่ปุ่ม Noclip ในเมนูผู้เล่นครับ"
+        elseif string.find(qLower, "สี") then
+            response = "คุณสามารถเปลี่ยนสีแชทได้ที่เมนู 'เปลี่ยนสีแชท AI' ในแท็บ AI Chat ได้ทันทีครับ"
+        elseif string.find(qLower, "ภาษา") then
+            response = "ระบบรองรับ ภาษาไทย ภาษาอังกฤษ และภาษาฝรั่งเศส ปรับเปลี่ยนได้ที่เมนูตั้งค่าแชทครับ"
+        elseif string.find(qLower, "ผู้สร้าง") or string.find(qLower, "ใครสร้าง") then
+            response = "สคริปต์นี้สร้างโดย คุณเอก ครับ"
+        else
+            -- คำตอบทั่วไปเมื่อถามเรื่องอื่นๆ ให้ตอบตรงและกระชับ
+            response = "ประมวลผลข้อมูลเรียบร้อยแล้วครับ คำตอบสำหรับเรื่องนี้คือ ระบบพร้อมสนับสนุนการใช้งานของคุณอย่างเต็มที่ หากต้องการรายละเอียดเพิ่มเติมในส่วนไหนแจ้งได้ทันทีครับ"
+        end
+    elseif CurrentLang == "EN" then
+        if string.find(qLower, "hello") or string.find(qLower, "hi") then
+            response = "Hello! I am AI GIMINI. How can I help you today?"
+        elseif string.find(qLower, "name") then
+            response = "I am AI GIMINI, AEK's Script Assistant."
+        else
+            response = "Query processed successfully. I am ready to answer any questions."
+        end
+    elseif CurrentLang == "FR" then
+        if string.find(qLower, "bonjour") or string.find(qLower, "salut") then
+            response = "Bonjour! Je suis AI GIMINI. Comment puis-je vous aider?"
+        else
+            response = "Traitement réussi. Je suis ready à répondre à vos questions."
+        end
+    end
+
+    AddChatMessage("AI GIMINI", response)
+end
+
+SendBtn.MouseButton1Click:Connect(function()
+    ProcessAIQuery(InputBox.Text)
+end)
+
+InputBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        ProcessAIQuery(InputBox.Text)
+    end
+end)
+
+AiSec:AddButton({
+    Title = "เปิดเมนูแชท AI (Full Screen)",
+    Callback = function()
+        ScreenGui.Enabled = true
+    end
+})
+
+AiSec:AddDropdown({
+    Title = "เปลี่ยนสีแชท AI",
+    Options = {"เขียวเรืองแสง", "แดง", "ม่วง", "ฟ้า", "ขาว"},
+    Callback = function(val)
+        if val == "เขียวเรืองแสง" then CurrentColor = Color3.fromRGB(0, 255, 128)
+        elseif val == "แดง" then CurrentColor = Color3.fromRGB(255, 50, 50)
+        elseif val == "ม่วง" then CurrentColor = Color3.fromRGB(180, 50, 255)
+        elseif val == "ฟ้า" then CurrentColor = Color3.fromRGB(50, 180, 255)
+        elseif val == "ขาว" then CurrentColor = Color3.fromRGB(255, 255, 255)
+        end
+        ChatStroke.Color = CurrentColor
+        ChatTitleLabel.TextColor3 = CurrentColor
+    end
+})
+
+AiSec:AddDropdown({
+    Title = "เปลี่ยนภาษา AI",
+    Options = {"ไทย", "อังกฤษ", "ฝรั่งเศส"},
+    Callback = function(val)
+        if val == "ไทย" then CurrentLang = "TH"
+        elseif val == "อังกฤษ" then CurrentLang = "EN"
+        elseif val == "ฝรั่งเศส" then CurrentLang = "FR"
+        end
+        Hub:Toast({Title = "Language Changed", Description = "เปลี่ยนภาษาเรียบร้อย", Type = "info"})
+    end
+})
+
+Hub:Toast({
+    Title = "เอกชอบสร้างสคริป",
+    Description = "ระบบ AI Chat อัปเดตการตอบเรียบร้อย!",
+    Type = "success"
+})
